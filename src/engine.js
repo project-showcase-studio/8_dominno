@@ -100,6 +100,21 @@ export class Engine {
     this.composer.render(dt);
   }
 
+  /** Tightens the sun's shadow frustum around a sphere (inside a room: ~2 mm texels instead of 1 cm); null resets. */
+  focusShadow(center, radius) {
+    const sc = this.sun.shadow.camera, sh = this.sun.shadow;
+    const c = center || new THREE.Vector3(0, 0, 0), r = center ? radius : 21;
+    sc.left = sc.bottom = -r;
+    sc.right = sc.top = r;
+    sc.updateProjectionMatrix();
+    sh.normalBias = center ? 0.008 : 0.025;
+    sh.bias = center ? -0.0002 : -0.00015;
+    this.shadowCenter = center ? c.clone() : null;
+    this.sun.target.position.copy(c);
+    this.sun.position.copy(this.sunDir || new THREE.Vector3(0.5, 0.8, 0.3)).multiplyScalar(60).add(c);
+    this.invalidate(2);
+  }
+
   // ---------------------------------------------------------------- environment
   async setEnvironment(key, sunFrom = this.sunFrom || [0.6, 0.8]) {
     this.sunFrom = sunFrom;
@@ -123,8 +138,9 @@ export class Engine {
     this.sunDir = d;
     this.sun.color.copy(E.sunColor);
     this.sun.intensity = key === 'evening' ? 2.3 : 4.3;
-    this.sun.position.copy(d).multiplyScalar(60);
-    this.sun.target.position.set(0, 0, 0);
+    const sc = this.shadowCenter || new THREE.Vector3();
+    this.sun.position.copy(d).multiplyScalar(60).add(sc);
+    this.sun.target.position.copy(sc);
     this.renderer.toneMappingExposure = key === 'evening' ? 1.0 : 1.0;
     s.fog = new THREE.Fog(E.fogColor, 90, 420);
     this.envKey = key;

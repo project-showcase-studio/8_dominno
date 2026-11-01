@@ -16,6 +16,15 @@ const SETS = {
   grass: { dir: 'grass', tile: [2.6, 2.6] },
   ground: { dir: 'ground', tile: [3, 3] },
   gravel: { dir: 'gravel', tile: [2.2, 2.2] },
+  // interior finishes (Poly Haven, 2k JPEG; fabrics 1k)
+  paint: { dir: 'paint', tile: [2.4, 2.4], ext: 'jpg' }, // plastered_wall_04: fine plaster under paint
+  parquet: { dir: 'parquet', tile: [1.6, 1.6], ext: 'jpg' }, // herringbone_parquet
+  oakplank: { dir: 'oakplank', tile: [2.2, 2.2], ext: 'jpg' }, // wood_floor: wide oak engineered boards
+  microcement: { dir: 'microcement', tile: [2.5, 2.5], ext: 'jpg' }, // smooth_concrete_floor
+  marble: { dir: 'marble', tile: [1.2, 1.2], ext: 'jpg' }, // marble_01: polished porcelain stoneware
+  brick: { dir: 'brick', tile: [1.6, 1.6], ext: 'jpg' }, // whitewashed_brick
+  boucle: { dir: 'boucle', tile: [0.5, 0.5], ext: 'jpg' }, // wool_boucle upholstery / rugs
+  herringbone: { dir: 'herringbone', tile: [0.45, 0.45], ext: 'jpg' }, // poly_wool_herringbone
 };
 
 const imgCache = new Map();
@@ -44,7 +53,7 @@ export function loadSet(key) {
       key,
       (async () => {
         const [color, normal, orm] = await Promise.all(
-          ['color', 'normal', 'orm'].map((n) => loadImage(`${BASE}tex/${set.dir}/${n}.webp`)),
+          ['color', 'normal', 'orm'].map((n) => loadImage(`${BASE}tex/${set.dir}/${n}.${set.ext || 'webp'}`)),
         );
         // albedo statistics (linear) for the tint normalisation
         const s = 64;
@@ -145,11 +154,12 @@ export function setFinish(mat, f) {
 
 /**
  * Surface material backed by a photo texture set. Geometry UVs are expected in metres.
- * opts: { color, tint: 'none'|'paint'|'stain'|'natural', contrast, keep, roughness, normalScale, tile, metalness }
+ * opts: { color, tint: 'none'|'paint'|'stain'|'natural', contrast, keep, roughness, normalScale, tile, metalness, physical }
  */
 export function surface(key, opts = {}) {
   const set = SETS[key];
-  const mat = new THREE.MeshStandardMaterial({
+  // fabrics take MeshPhysicalMaterial for the sheen lobe over the photographed weave
+  const mat = new (opts.physical ? THREE.MeshPhysicalMaterial : THREE.MeshStandardMaterial)({
     color: opts.color ?? '#ffffff',
     roughness: opts.roughness ?? 0.8,
     metalness: opts.metalness ?? 0,

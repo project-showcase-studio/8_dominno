@@ -4,6 +4,7 @@ import { PROJECTS, OPTIONS, ALTERNATIVES, COMPANY, price, rub } from './catalog.
 import { preloadSets, onTextureReady, BASE } from './materials.js';
 import { setEvening, setWood } from './houses/kit.js';
 import { makeGround, makeHardscape, makeTrees, makeGlobes, mulchBed } from './site.js';
+import { Interior } from './interior/interior.js';
 
 const HOUSES = {
   d130: () => import('./houses/d130.js').then((m) => m.D130),
@@ -21,9 +22,11 @@ const qp = params.get('p');
 const qcam = (params.get('cam') || '').split(',').map(Number);
 // ?clean — scene only (presentation renders / screenshots); ?kit — domokomplekt only
 if (params.has('clean')) document.body.classList.add('clean');
+// ?room — start inside the house (interior mode)
 const state = {
   project: PROJECTS[qp] ? qp : 'd130',
   tod: params.get('tod') === 'evening' ? 'evening' : 'day',
+  mode: params.has('room') ? 'interior' : 'exterior',
   cfg: {},
 };
 for (const id of Object.keys(PROJECTS)) {
@@ -38,6 +41,7 @@ const world = new THREE.Group();
 scene.add(world);
 let current = null; // { def, built, key, extras }
 const matsCache = {};
+const interior = new Interior(engine, { onChange: () => renderSummary() });
 
 const modelCfg = (c) => ({ opts: c.opts, clad: c.clad, roofType: c.roofType });
 function structuralKey(id, c) {
@@ -69,7 +73,10 @@ async function doShow(id, { fly = true } = {}) {
   engine.sunFrom = def.sun;
   applyLooks();
   await applyTod();
-  if (fly && projectChanged) {
+  if (state.mode === 'interior') {
+    await interior.enter(id, built);
+    state.started = true;
+  } else if (fly && projectChanged) {
     const [p, t] = qcam.length === 6 && qcam.every(Number.isFinite) && !state.started ? [qcam.slice(0, 3), qcam.slice(3)] : def.views.main;
     if (!state.started) {
       engine.camera.position.set(...p);
@@ -216,6 +223,8 @@ async function applyTod() {
       if (o.isMesh && o.material.userData?.glow) o.material.emissiveIntensity = ev ? o.material.userData.glow : 0;
     });
   }
+  await interior.setEvening(ev);
+  if (!interior.active) engine.renderer.toneMappingExposure = 1.0;
   engine.invalidate(3);
 }
 
@@ -228,24 +237,25 @@ function renderHeader() {
     const b = e.target.closest('button');
     if (!b || b.dataset.p === state.project) return;
     state.project = b.dataset.p;
-    history.replaceState(null, '', '?p=' + state.project);
+    syncUrl();
     renderAll();
     showProject(state.project);
   };
-  const views = [
-    ['main', 'Общий вид'],
-    ['terrace', 'Терраса'],
-    ['facade', 'Фасад'],
-    ['back', 'Вход'],
-    ['top', 'Сверху'],
-  ];
+  const inside = state.mode === 'interior';
+  const views = inside
+    ? [['main', 'Общий вид'], ['tv', 'ТВ-зона'], ['windows', 'Окна'], ['back', 'Из окна'], ['top', 'Сверху']]
+    : [['main', 'Общий вид'], ['terrace', 'Терраса'], ['facade', 'Фасад'], ['back', 'Вход'], ['top', 'Сверху']];
   $('#views').innerHTML = views.map(([k, l]) => `<button data-v="${k}">${l}</button>`).join('');
   $('#views').onclick = (e) => {
     const b = e.target.closest('button');
     if (!b || !current) return;
-    const [p, t] = current.def.views[b.dataset.v];
+    const [p, t] = inside ? interior.views()[b.dataset.v] : current.def.views[b.dataset.v];
     engine.flyTo(p, t);
   };
+  $('#enter').innerHTML = inside
+    ? `<svg viewBox="0 0 24 24"><path d="M10 4H5v16h5M14 8l-4 4 4 4M10 12h10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Выйти из дома</span>`
+    : `<svg viewBox="0 0 24 24"><path d="M14 4h5v16h-5M10 8l4 4-4 4M14 12H4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Войти в дом</span>`;
+  $('#enter').classList.toggle('accent', !inside);
   $('#tod').innerHTML = [
     ['day', 'День'],
     ['evening', 'Вечер'],
@@ -263,6 +273,7 @@ function renderHeader() {
 
 function renderProject() {
   const P = PROJECTS[state.project];
+  if (state.mode === 'interior' && interior.active) return interior.renderProject($('#project'), P);
   $('#project').innerHTML = `
     <div class="eyebrow">${P.series.split(' · ').map((t) => `<span>${t}</span>`).join(' · ')}</div>
     <h1>${P.name}</h1>
@@ -282,6 +293,12 @@ const palette = (P, c, g, off = false) =>
   `<div class="pal ${off ? 'off' : ''}"><h3>${P.palettes[g].label}</h3><div class="sws">${P.palettes[g].items.map((it) => swatch(it, c[g] === it.id, g)).join('')}</div></div>`;
 
 function renderOptions() {
+  if (state.mode === 'interior') {
+    if (interior.active) interior.renderOptions($('#options'));
+    else $('#options').innerHTML = '<p class="note">Загружаем интерьер…</p>';
+    return;
+  }
+  $('#options').onclick = null;
   const id = state.project, P = PROJECTS[id], c = state.cfg[id];
   const sec = (num, title, body, sub = '') => `<section class="opt"><h2><em>${num}</em>${title}${sub ? `<span>${sub}</span>` : ''}</h2>${body}</section>`;
   const cards = (key, items, off) =>
@@ -325,6 +342,7 @@ function renderSummary() {
       <div><span>Домокомплект ${P.name}, ${String(P.area).replace('.', ',')} м²</span><b>${rub(p.base)}</b></div>
       <div><span>Опции комплектации: ${p.lines.length} из ${OPTIONS.length}</span><b>+${rub(p.total - p.base)}</b></div>
       ${p.alt ? `<div><span>Альтернативные материалы (${p.alt})</span><b>по запросу</b></div>` : ''}
+      ${interior.store[id] ? `<div><span>Внутренняя отделка и мебель (${interior.store[id].items?.length || 0} предм.)</span><b>по запросу</b></div>` : ''}
     </div>
     <div class="sum-total"><span>Предварительная стоимость</span><strong>${rub(p.total)}</strong><small>${rub(p.perM2)}/м² · доставка, автокран, коммуникации и внутренняя отделка — индивидуально</small></div>
     <button class="btn primary" id="send">Получить коммерческое предложение</button>`;
@@ -339,6 +357,7 @@ function renderAll() {
 }
 
 $('#options').addEventListener('click', (e) => {
+  if (state.mode === 'interior') return;
   const id = state.project, c = state.cfg[id];
   const t = e.target.closest('button');
   if (!t) return;
@@ -353,6 +372,7 @@ $('#options').addEventListener('click', (e) => {
   renderSummary();
 });
 $('#options').addEventListener('change', (e) => {
+  if (state.mode === 'interior') return;
   const id = state.project, c = state.cfg[id];
   const t = e.target;
   if (t.type !== 'checkbox') return;
@@ -374,7 +394,8 @@ function openRequest() {
     ...(c.opts.roof ? [`Кровля: ${ALTERNATIVES.roofType.find((x) => x[0] === c.roofType)[1]}`] : []),
     `Цвет металла: ${pick(id, 'metal').label}`,
     ...(c.opts.windows ? [`Окна и двери: ${pick(id, 'frame').label}`] : []),
-    `Предварительная стоимость: ${rub(p.total)}${p.alt ? ' + альтернативы по запросу' : ''}`,
+    ...interior.describe(id),
+    `Предварительная стоимость: ${rub(p.total)}${p.alt || interior.store[id] ? ' + ' + [p.alt && 'альтернативы', interior.store[id] && 'интерьер'].filter(Boolean).join(' и ') + ' по запросу' : ''}`,
   ];
   $('#req-body').innerHTML = `<ul>${lines.map((l) => `<li>${l.replace(/^([^:]+):/, '<span>$1</span>')}</li>`).join('')}</ul>
     <p class="note">Расчёт предварительный и не является офертой. Цена фиксируется в договоре. Доставка, автокран, инженерные коммуникации и внутренняя отделка рассчитываются индивидуально; дальше 30 км от Екатеринбурга добавляются транспортные и командировочные расходы.</p>
@@ -393,9 +414,36 @@ $('#shot').onclick = () => {
   const url = engine.capture(2560, 1440);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `ДОМИННО-${PROJECTS[state.project].name}.png`;
+  a.download = `ДОМИННО-${PROJECTS[state.project].name}${state.mode === 'interior' ? '-интерьер' : ''}.png`;
   a.click();
 };
+
+// ---------------------------------------------------------------- inside / outside
+function syncUrl() {
+  history.replaceState(null, '', '?p=' + state.project + (state.mode === 'interior' ? '&room' : ''));
+}
+async function setMode(mode) {
+  if (mode === state.mode) return;
+  const fade = $('#fade');
+  fade.classList.add('on');
+  await new Promise((r) => setTimeout(r, 280));
+  state.mode = mode;
+  syncUrl();
+  await building;
+  if (mode === 'interior') {
+    renderAll();
+    await interior.enter(state.project, current.built);
+  } else {
+    interior.exit();
+    const [p, t] = current.def.views.terrace;
+    engine.camera.position.set(...p);
+    engine.controls.target.set(...t);
+  }
+  await applyTod();
+  renderAll();
+  requestAnimationFrame(() => fade.classList.remove('on'));
+}
+$('#enter').onclick = () => setMode(state.mode === 'interior' ? 'exterior' : 'interior');
 
 // ---------------------------------------------------------------- start
 renderAll();
@@ -405,10 +453,11 @@ renderAll();
   await engine.setEnvironment(state.tod);
   bar.style.width = '70%';
   await showProject(state.project);
+  if (state.mode === 'interior') renderAll();
   bar.style.width = '100%';
   setTimeout(() => $('#loader').classList.add('done'), 250);
   setTimeout(() => document.body.setAttribute('data-ready', ''), 4000);
   setTimeout(() => $('#hint').classList.add('done'), 6000);
 })();
 
-globalThis.__app = { engine, state, get current() { return current; }, showProject, applyLooks, applyTod };
+globalThis.__app = { engine, state, interior, get current() { return current; }, showProject, applyLooks, applyTod, setMode };

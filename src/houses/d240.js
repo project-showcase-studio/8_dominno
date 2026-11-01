@@ -220,10 +220,30 @@ function build(cfg, mats = baseMaterials()) {
   piles(K, { x0: P0, x1: P1, z0: LZ1, z1: PZ, yTop: yd - 0.028 - 0.15, nx: 2, nz: 0, sill: false, size: 0.2, inset: 0.25 });
   blockSteps(K, { x: (P0 + P1) / 2, z: PZ, dir: [0, 1], w: P1 - P0, yTop: yd, n: 2, boards: o.finish });
 
+  // ---------------------------------------------------------------- interior: living room of the tall wing (43 m² zone)
+  // from the terrace gable 7.4 m in, under the mono-pitch; clerestories high on the junction wall, the kitchen window
+  // on the long wall, the fireplace under the chimney
+  const zIn = AG1 - THK - 0.005;
+  const revG = THK - 0.14 + 0.005, revW = TW - 0.14 + 0.005; // reveal depth to the frames in the gable / long walls
+  const interior = {
+    title: 'Гостиная', titleIn: 'гостиной с камином и вторым светом',
+    floor: FL, x0: XA + TW + 0.005, x1: XB - TW - 0.005, z0: zIn - 7.4, z1: zIn,
+    ceil: (X) => SA.topAt(X) - 0.12, breaks: [], accent: 'left', tvU: -0.55,
+    openings: {
+      front: frontA.map((op) => (op.poly
+        ? { poly: op.poly.map(([x, y]) => [aX(x), y]), depth: revG }
+        : { u0: aX(op.x0), u1: aX(op.x1), y0: op.y, y1: op.y + op.h, depth: revG })),
+      right: [{ u0: 6.06 + OZ, u1: 7.56 + OZ, y0: FL + 0.9, y1: FL + 2.3, depth: revW }],
+      left: [[5.86, 7.21], [7.35, 8.63], [8.84, 10.11]].map(([a, b]) => ({ u0: a + OZ, u1: b + OZ, y0: FL + 4.709, y1: FL + 5.109, depth: revW, high: true })),
+    },
+    door: { side: 'back', u: XB - TW - 0.8, w: 0.8, h: 2.0 },
+    fireplace: { side: 'left', u: 12.0 + OZ },
+  };
+
   const group = B.build(mats);
   group.name = 'dominno240';
   return {
-    group, mats, lights, entry: [(P0 + P1) / 2, PZ + 0.95],
+    group, mats, lights, interior, entry: [(P0 + P1) / 2, PZ + 0.95],
     bounds: { x0: XL - 0.05, x1: XB + 0.05, z0: T2 - 0.9, z1: T1 + 0.9 },
     meta: { FL },
   };

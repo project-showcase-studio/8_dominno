@@ -147,10 +147,25 @@ function build(cfg, mats = baseMaterials()) {
   piles(K, { x0: px0, x1: px1, z0: pz0, z1: ZR, yTop: yd - 0.028 - 0.15, nx: 1, nz: 1, sill: false, size: 0.2, inset: 0.2 });
   const stepsR = blockSteps(K, { x: (px0 + px1) / 2, z: pz0, dir: [0, -1], w: px1 - px0, yTop: yd, n: 2, boards: o.finish });
 
+  // ---------------------------------------------------------------- interior: the living room behind the glazed gable
+  // walls at the inner faces of the side panels and the gable, partition 3.7 m in; ceiling under the roof slopes
+  const zIn = ZG - THK - 0.005, rev = THK - 0.14 + 0.005; // reveal depth up to the PVC frames (set back 70 mm)
+  const interior = {
+    title: 'Гостиная', titleIn: 'гостиной со вторым светом',
+    floor: FL, x0: xi0 + 0.005, x1: xi1 - 0.005, z0: zIn - 3.7, z1: zIn,
+    ceil: (X) => soffit(X) - 0.1, breaks: [0], accent: 'left', tvU: -0.05,
+    openings: {
+      front: front.map((op) => (op.poly
+        ? { poly: op.poly.map(([x, y]) => [fX(x), y]), depth: rev }
+        : { u0: fX(op.x0), u1: fX(op.x1), y0: op.y, y1: op.y + op.h, depth: rev })),
+    },
+    door: { side: 'back', u: 1.75, w: 0.8, h: 2.0 },
+  };
+
   const group = B.build(mats);
   group.name = 'dominno130';
   return {
-    group, mats, lights, entry: [0, ZD + 0.9],
+    group, mats, lights, interior, entry: [0, ZD + 0.9],
     bounds: { x0: -HW - 0.05, x1: HW + 0.05, z0: pz0 - 0.9, z1: ZD + 0.85 },
     meta: { FL },
     // paved landings at the foot of the steps (the path starts from the front one)
