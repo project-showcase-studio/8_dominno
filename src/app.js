@@ -237,6 +237,7 @@ function renderHeader() {
     const b = e.target.closest('button');
     if (!b || b.dataset.p === state.project) return;
     state.project = b.dataset.p;
+    track('switch-' + state.project, 'Переключение на ' + PROJECTS[state.project].name);
     syncUrl();
     renderAll();
     showProject(state.project);
@@ -401,8 +402,15 @@ function openRequest() {
     <p class="note">Расчёт предварительный и не является офертой. Цена фиксируется в договоре. Доставка, автокран, инженерные коммуникации и внутренняя отделка рассчитываются индивидуально; дальше 30 км от Екатеринбурга добавляются транспортные и командировочные расходы.</p>
     <p class="req-phone">Позвоните: <a href="${COMPANY.phoneHref}">${COMPANY.phone}</a> · <a href="mailto:${COMPANY.email}">${COMPANY.email}</a> · <a href="${COMPANY.telegram}" target="_blank" rel="noopener">Telegram</a></p>`;
   $('#req-link').href = P.url;
+  $('#req-link').onclick = () => track('site-' + id, 'Переход на dominno.ru');
+  $('#req-body .req-phone').onclick = (e) => {
+    const a = e.target.closest('a');
+    if (a) track(a.href.startsWith('tel:') ? 'phone' : a.href.startsWith('mailto:') ? 'email' : 'telegram', 'Контакт: ' + a.textContent);
+  };
+  track('request-' + id, 'Коммерческое предложение: ' + P.name);
   $('#req-copy').onclick = (e) => {
     e.preventDefault();
+    track('copy-' + id, 'Скопирован расчёт');
     navigator.clipboard?.writeText(lines.join('\n'));
     $('#req-copy').textContent = 'Скопировано';
     setTimeout(() => ($('#req-copy').textContent = 'Скопировать расчёт'), 1600);
@@ -411,12 +419,18 @@ function openRequest() {
 }
 
 $('#shot').onclick = () => {
+  track('screenshot', 'Снимок экрана');
   const url = engine.capture(2560, 1440);
   const a = document.createElement('a');
   a.href = url;
   a.download = `ДОМИННО-${PROJECTS[state.project].name}${state.mode === 'interior' ? '-интерьер' : ''}.png`;
   a.click();
 };
+
+// visit statistics: GoatCounter events (the counter script is loaded async in index.html)
+function track(path, title) {
+  try { window.goatcounter?.count?.({ path, title, event: true }); } catch {}
+}
 
 // ---------------------------------------------------------------- inside / outside
 function syncUrl() {
@@ -428,6 +442,7 @@ async function setMode(mode) {
   fade.classList.add('on');
   await new Promise((r) => setTimeout(r, 280));
   state.mode = mode;
+  if (mode === 'interior') track('enter-' + state.project, 'Вход в дом');
   syncUrl();
   await building;
   if (mode === 'interior') {
